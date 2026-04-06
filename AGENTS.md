@@ -453,6 +453,12 @@ def profile_env(tmp_path, monkeypatch):
     return home
 ```
 
+## Gateway + Secret Sync Ops
+
+- `scripts/sync_secrets.py` is the single source for hydrating `~/.hermes/.env`. It shells out to AWS Secrets Manager (default secret `hermes/prod`) and overwrites `OPENCODE_ZEN_API_KEY`, `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN`. Override the inputs with `HERMES_SECRET_ID=<name>` or `AWS_CLI=/path/to/aws` before running. Run it manually with `source .venv/bin/activate && python scripts/sync_secrets.py`.
+- User-level systemd unit lives at `~/.config/systemd/user/hermes-gateway.service`. It exports `HERMES_HOME`, sources `~/.hermes/.env`, executes `sync_secrets.py` in `ExecStartPre`, then launches `scripts/hermes-gateway run`. Restart/reload via `systemctl --user daemon-reload` and `systemctl --user restart hermes-gateway`. Check health with `systemctl --user status hermes-gateway` or `journalctl --user -u hermes-gateway -f`.
+- When introducing new credentials or moving profiles, update the AWS secret first, re-run `sync_secrets.py`, and bounce the service so the gateway never starts with stale tokens.
+
 ---
 
 ## Testing
