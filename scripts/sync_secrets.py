@@ -64,6 +64,48 @@ def main() -> None:
     telegram_token = _nested(secret, ["channels", "telegram", "botToken"])
     if telegram_token:
         updates["TELEGRAM_BOT_TOKEN"] = telegram_token
+    
+    # Google Workspace OAuth credentials
+    google_client_id = _nested(secret, ["integrations", "google", "primary", "clientId"])
+    if google_client_id:
+        updates["GOOGLE_CLIENT_ID"] = google_client_id
+    google_client_secret = _nested(secret, ["integrations", "google", "primary", "clientSecret"])
+    if google_client_secret:
+        updates["GOOGLE_CLIENT_SECRET"] = google_client_secret
+    google_refresh_token = _nested(secret, ["integrations", "google", "primary", "refreshToken"])
+    if google_refresh_token:
+        updates["GOOGLE_REFRESH_TOKEN"] = google_refresh_token
+    google_api_key = _nested(secret, ["integrations", "google", "primary", "generativeApiKey"])
+    if google_api_key:
+        updates["GOOGLE_API_KEY"] = google_api_key
+    
+    # Gmail Bridge configuration
+    gmail_project_id = _nested(secret, ["gmail", "bridge", "pubsub_project_id"])
+    if gmail_project_id:
+        updates["GOOGLE_PROJECT_ID"] = gmail_project_id
+    gmail_subscription = _nested(secret, ["gmail", "bridge", "subscription_name"])
+    if gmail_subscription:
+        updates["GMAIL_SUBSCRIPTION"] = gmail_subscription
+    gmail_telegram_target = _nested(secret, ["gmail", "bridge", "telegram_target"])
+    if gmail_telegram_target:
+        updates["GMAIL_TELEGRAM_TARGET"] = gmail_telegram_target
+    gmail_telegram_thread = _nested(secret, ["gmail", "bridge", "telegram_thread_id"])
+    if gmail_telegram_thread:
+        updates["GMAIL_TELEGRAM_THREAD"] = gmail_telegram_thread
+    gmail_max_messages = _nested(secret, ["gmail", "bridge", "max_messages_per_pull"])
+    if gmail_max_messages:
+        updates["GMAIL_MAX_MESSAGES"] = str(gmail_max_messages)
+    
+    # Gmail Bridge OAuth credentials (específicas para Watch API)
+    gmail_client_id = _nested(secret, ["gmail", "bridge", "credentials_json", "installed", "client_id"])
+    if gmail_client_id:
+        updates["GMAIL_CLIENT_ID"] = gmail_client_id
+    gmail_client_secret = _nested(secret, ["gmail", "bridge", "credentials_json", "installed", "client_secret"])
+    if gmail_client_secret:
+        updates["GMAIL_CLIENT_SECRET"] = gmail_client_secret
+    gmail_refresh_token = _nested(secret, ["gmail", "bridge", "token_json", "refresh_token"])
+    if gmail_refresh_token:
+        updates["GMAIL_REFRESH_TOKEN"] = gmail_refresh_token
 
     if not updates:
         print("sync_secrets: no updates found; skipping")
