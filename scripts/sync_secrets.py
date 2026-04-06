@@ -107,6 +107,31 @@ def main() -> None:
     if gmail_refresh_token:
         updates["GMAIL_REFRESH_TOKEN"] = gmail_refresh_token
 
+    # GitHub integration credentials
+    github_pat = _nested(secret, ["github", "pat_main"])
+    if github_pat:
+        updates["GITHUB_TOKEN"] = github_pat
+    
+    # Scripture Service configuration
+    scripture_target = _nested(secret, ["scripture", "telegram_target"])
+    if scripture_target:
+        updates["SCRIPTURE_TELEGRAM_TARGET"] = scripture_target
+    else:
+        # Default to same chat as Gmail Bridge  
+        gmail_target_chat = _nested(secret, ["gmail", "bridge", "targetChatId"])
+        if gmail_target_chat:
+            updates["SCRIPTURE_TELEGRAM_TARGET"] = gmail_target_chat
+        else:
+            # Hardcode for now
+            updates["SCRIPTURE_TELEGRAM_TARGET"] = "-1003796258079"
+    
+    github_client_id = _nested(secret, ["integrations", "github", "primary", "clientId"])
+    if github_client_id:
+        updates["GITHUB_CLIENT_ID"] = github_client_id
+    github_client_secret = _nested(secret, ["integrations", "github", "primary", "clientSecret"])
+    if github_client_secret:
+        updates["GITHUB_CLIENT_SECRET"] = github_client_secret
+
     if not updates:
         print("sync_secrets: no updates found; skipping")
         return
