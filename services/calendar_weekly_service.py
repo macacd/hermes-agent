@@ -105,6 +105,33 @@ class CalendarWeeklyService:
             logger.error(f"Error creando servicio Calendar: {e}")
             raise
     
+    def get_all_selected_calendars(self):
+        """Obtiene todos los calendarios seleccionados."""
+        service = self.get_calendar_service()
+        
+        try:
+            calendar_list = service.calendarList().list().execute()
+            selected_calendars = []
+            
+            for calendar_item in calendar_list['items']:
+                if calendar_item.get('selected', False):
+                    selected_calendars.append({
+                        'id': calendar_item['id'],
+                        'summary': calendar_item.get('summary', 'Sin nombre'),
+                        'primary': calendar_item.get('primary', False)
+                    })
+                    
+            logger.info(f"Calendarios seleccionados encontrados: {len(selected_calendars)}")
+            for cal in selected_calendars:
+                logger.info(f"  - {cal['summary']} ({'PRIMARY' if cal['primary'] else 'SECONDARY'})")
+                
+            return selected_calendars
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo calendarios: {e}")
+            # Fallback al calendario primario
+            return [{'id': 'primary', 'summary': 'Primary Calendar', 'primary': True}]
+
     def get_week_remaining_events(self) -> List[CalendarEvent]:
         """Obtiene eventos hasta el final de la próxima semana laboral (viernes)."""
         service = self.get_calendar_service()
@@ -131,40 +158,73 @@ class CalendarWeeklyService:
         time_min = now.isoformat() + 'Z' if now.tzinfo is None else now.isoformat()
         time_max = friday_end.isoformat() + 'Z' if friday_end.tzinfo is None else friday_end.isoformat()
         
-        events_result = service.events().list(
-            calendarId='primary',
-            timeMin=time_min,
-            timeMax=time_max,
-            maxResults=50,
-            singleEvents=True,
-            orderBy='startTime'
-        ).execute()
+        # Obtener todos los calendarios seleccionados
+        selected_calendars = self.get_all_selected_calendars()
         
-        events = []
-        for event in events_result.get('items', []):
-            start = event['start']
-            end = event['end']
-            
-            # Determinar si es todo el día
-            is_all_day = 'date' in start
-            
-            # Parsear fechas
-            if is_all_day:
-                start_time = datetime.fromisoformat(start['date'])
-                end_time = datetime.fromisoformat(end['date']) if end.get('date') else None
-            else:
-                start_time = datetime.fromisoformat(start['dateTime'].replace('Z', '+00:00'))
-                end_time = datetime.fromisoformat(end['dateTime'].replace('Z', '+00:00')) if end.get('dateTime') else None
-            
-            events.append(CalendarEvent(
-                summary=event.get('summary', 'Sin título'),
-                start_time=start_time,
-                end_time=end_time,
-                location=event.get('location'),
-                is_all_day=is_all_day
-            ))
+        all_events = []
         
-        return events
+        # Buscar eventos en cada calendario seleccionado
+        for calendar in selected_calendars:
+            try:
+                events_result = service.events().list(
+                    calendarId=calendar['id'],
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    maxResults=50,
+                    singleEvents=True,
+                    orderBy='startTime'
+                ).execute()
+                
+                calendar_events = events_result.get('items', [])
+                logger.info(f"Calendario '{calendar['summary']}': {len(calendar_events)} eventos")
+                
+                for event in calendar_events:
+                    start = event['start']
+                    end = event['end']
+                    
+                    # Determinar si es todo el día
+                    is_all_day = 'date' in start
+                    
+                    # Parsear fechas (normalizar timezone)
+                    if is_all_day:
+                        start_time = datetime.fromisoformat(start['date'])
+                        end_time = datetime.fromisoformat(end['date']) if end.get('date') else None
+                    else:
+                        start_dt_str = start['dateTime']
+                        if 'Z' in start_dt_str:
+                            start_dt_str = start_dt_str.replace('Z', '+00:00')
+                        start_time = datetime.fromisoformat(start_dt_str)
+                        # Convertir a naive datetime (sin timezone) para consistencia
+                        if start_time.tzinfo is not None:
+                            start_time = start_time.replace(tzinfo=None)
+                            
+                        if end.get('dateTime'):
+                            end_dt_str = end['dateTime']
+                            if 'Z' in end_dt_str:
+                                end_dt_str = end_dt_str.replace('Z', '+00:00')
+                            end_time = datetime.fromisoformat(end_dt_str)
+                            # Convertir a naive datetime
+                            if end_time.tzinfo is not None:
+                                end_time = end_time.replace(tzinfo=None)
+                        else:
+                            end_time = None
+                    
+                    all_events.append(CalendarEvent(
+                        summary=event.get('summary', 'Sin título'),
+                        start_time=start_time,
+                        end_time=end_time,
+                        location=event.get('location'),
+                        is_all_day=is_all_day
+                    ))
+                    
+            except Exception as e:
+                logger.error(f"Error buscando eventos en calendario '{calendar['summary']}': {e}")
+                continue
+        
+        # Ordenar todos los eventos por fecha de inicio
+        all_events.sort(key=lambda x: x.start_time)
+        
+        return all_events
     
     def format_events_message(self, events: List[CalendarEvent]) -> str:
         """Formatea los eventos en mensaje de Telegram."""
