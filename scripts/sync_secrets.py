@@ -131,6 +131,14 @@ def main() -> None:
     if github_client_secret:
         updates["GITHUB_CLIENT_SECRET"] = github_client_secret
     
+    # ClickUp integration credentials
+    clickup_api_key = _nested(secret, ["integrations", "clickup", "apiKey"])
+    if clickup_api_key:
+        updates["CLICKUP_API_KEY"] = clickup_api_key
+    clickup_team_id = _nested(secret, ["integrations", "clickup", "teamId"])
+    if clickup_team_id:
+        updates["CLICKUP_TEAM_ID"] = clickup_team_id
+    
     # Calendar service Telegram target (personal chat)
     calendar_target = _nested(secret, ["calendar", "telegram_target"])
     if calendar_target:
