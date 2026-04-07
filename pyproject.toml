@@ -39,6 +39,7 @@ dependencies = [
   "google-auth-httplib2>=0.3.1",
   "google-api-python-client>=2.193.0",
   "google-cloud-pubsub>=2.36.0",
+  "reportlab>=4.4.10",
 ]
 
 [project.optional-dependencies]
