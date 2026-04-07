@@ -121,9 +121,7 @@ class CalendarWeeklyService:
                         'primary': calendar_item.get('primary', False)
                     })
                     
-            logger.info(f"Calendarios seleccionados encontrados: {len(selected_calendars)}")
-            for cal in selected_calendars:
-                logger.info(f"  - {cal['summary']} ({'PRIMARY' if cal['primary'] else 'SECONDARY'})")
+            logger.info(f"Consultando {len(selected_calendars)} calendarios seleccionados")
                 
             return selected_calendars
             
@@ -176,7 +174,6 @@ class CalendarWeeklyService:
                 ).execute()
                 
                 calendar_events = events_result.get('items', [])
-                logger.info(f"Calendario '{calendar['summary']}': {len(calendar_events)} eventos")
                 
                 for event in calendar_events:
                     start = event['start']
