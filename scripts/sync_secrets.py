@@ -89,6 +89,9 @@ def main() -> None:
     gmail_telegram_target = _nested(secret, ["gmail", "bridge", "telegram_target"])
     if gmail_telegram_target:
         updates["GMAIL_TELEGRAM_TARGET"] = gmail_telegram_target
+    else:
+        # Default Gmail Bridge to main user chat (same as Hermes Gateway)
+        updates["GMAIL_TELEGRAM_TARGET"] = "882558885"
     gmail_telegram_thread = _nested(secret, ["gmail", "bridge", "telegram_thread_id"])
     if gmail_telegram_thread:
         updates["GMAIL_TELEGRAM_THREAD"] = gmail_telegram_thread
@@ -117,13 +120,9 @@ def main() -> None:
     if scripture_target:
         updates["SCRIPTURE_TELEGRAM_TARGET"] = scripture_target
     else:
-        # Default to same chat as Gmail Bridge  
-        gmail_target_chat = _nested(secret, ["gmail", "bridge", "targetChatId"])
-        if gmail_target_chat:
-            updates["SCRIPTURE_TELEGRAM_TARGET"] = gmail_target_chat
-        else:
-            # Hardcode for now
-            updates["SCRIPTURE_TELEGRAM_TARGET"] = "-1003796258079"
+        # Default to main user chat (where user interacts with Hermes Gateway)
+        # Use TELEGRAM_ALLOWED_USERS as the target for Scripture delivery
+        updates["SCRIPTURE_TELEGRAM_TARGET"] = "882558885"  # Main user chat
     
     github_client_id = _nested(secret, ["integrations", "github", "primary", "clientId"])
     if github_client_id:
@@ -131,6 +130,14 @@ def main() -> None:
     github_client_secret = _nested(secret, ["integrations", "github", "primary", "clientSecret"])
     if github_client_secret:
         updates["GITHUB_CLIENT_SECRET"] = github_client_secret
+    
+    # Calendar service Telegram target (personal chat)
+    calendar_target = _nested(secret, ["calendar", "telegram_target"])
+    if calendar_target:
+        updates["CALENDAR_TELEGRAM_TARGET"] = calendar_target
+    else:
+        # Default to personal chat
+        updates["CALENDAR_TELEGRAM_TARGET"] = "882558885"
 
     if not updates:
         print("sync_secrets: no updates found; skipping")
