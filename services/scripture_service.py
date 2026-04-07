@@ -13,6 +13,7 @@ import requests
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+import pytz
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from reportlab.lib.pagesizes import letter, A4
@@ -20,6 +21,11 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
+
+def get_madrid_now():
+    # Obtiene la fecha/hora actual en timezone de Madrid
+    madrid_tz = pytz.timezone('Europe/Madrid')
+    return datetime.now(madrid_tz)
 
 # Configurar logging
 logging.basicConfig(
@@ -114,7 +120,7 @@ class ScriptureService:
         Ajustado para que Lucas 17 caiga mañana (día 97 del año 2026).
         """
         if day_number is None:
-            day_number = datetime.now().timetuple().tm_yday
+            day_number = get_madrid_now().timetuple().tm_yday
         
         # Ajuste para que Lucas 17 (capítulo 61 del NT) caiga el 7 de abril (día 97)
         # Ajuste = 61 - 97 = -36 días
@@ -301,7 +307,7 @@ Puedes leer el capítulo completo en:
 
 **Libro:** {chapter_info.book}  
 **Capítulo:** {chapter_info.chapter} de {chapter_info.total_chapters}  
-**Fecha:** {datetime.now().strftime('%d de %B de %Y')}  
+**Fecha:** {get_madrid_now().strftime('%d de %B de %Y')}  
 **Día del año:** {chapter_info.day_number}  
 
 ---
@@ -331,9 +337,10 @@ Tómate unos minutos para meditar en las palabras leídas y aplicarlas a tu vida
         return markdown_content
     
     def save_chapter_markdown(self, chapter_info: ChapterInfo, text: str) -> Path:
-        """Guarda el capítulo como archivo markdown."""
-        filename = f"{datetime.now().strftime('%Y%m%d')}_{chapter_info.book_abbrev}_{chapter_info.chapter:02d}.md"
-        filepath = self.scripture_dir / "daily_readings" / filename
+        \"\"\"Guarda el capítulo como archivo markdown.\"\"\"
+        date_str = get_madrid_now().strftime('%Y%m%d')
+        filename = f\"{date_str}_{chapter_info.book_abbrev}_{chapter_info.chapter:02d}.md\"
+        filepath = self.scripture_dir / \"daily_readings\" / filename
         filepath.parent.mkdir(exist_ok=True)
         
         markdown_content = self.generate_chapter_markdown(chapter_info, text)
@@ -401,7 +408,7 @@ Tómate unos minutos para meditar en las palabras leídas y aplicarlas a tu vida
         message = f"""📖 **LECTURA DEL DÍA**
 
 📚 **{chapter_info.book} {chapter_info.chapter}**
-📅 {datetime.now().strftime('%d/%m/%Y')} • Día {chapter_info.day_number}
+📅 {get_madrid_now().strftime('%d/%m/%Y')} • Día {chapter_info.day_number}
 
 {santoral}
 
@@ -486,7 +493,7 @@ Tómate unos minutos para meditar en las palabras leídas y aplicarlas a tu vida
     def get_santoral_del_dia(self, target_date: Optional[datetime] = None) -> str:
         """Obtiene el santoral católico del día."""
         if target_date is None:
-            target_date = datetime.now()
+            target_date = get_madrid_now()
         
         # Santoral manual para fechas conocidas (abril)
         santoral_manual = {
@@ -531,7 +538,7 @@ Tómate unos minutos para meditar en las palabras leídas y aplicarlas a tu vida
             pdf_dir.mkdir(parents=True, exist_ok=True)
             
             # Nombre del archivo
-            date_str = datetime.now().strftime("%Y%m%d")
+            date_str = get_madrid_now().strftime(\"%Y%m%d\")
             abbrev = chapter_info.book_abbrev if hasattr(chapter_info, 'book_abbrev') else chapter_info.book[:3]
             filename = f"{date_str}_{abbrev}_{chapter_info.chapter:02d}.pdf"
             pdf_path = pdf_dir / filename
@@ -581,7 +588,7 @@ Tómate unos minutos para meditar en las palabras leídas y aplicarlas a tu vida
             
             # Título
             story.append(Paragraph(f"<b>{chapter_info.book} {chapter_info.chapter}</b>", title_style))
-            story.append(Paragraph(f"Lectura del día • {datetime.now().strftime('%d de %B de %Y')}", subtitle_style))
+            story.append(Paragraph(f\"Lectura del día • {get_madrid_now().strftime('%d de %B de %Y')}\", subtitle_style))
             story.append(Spacer(1, 0.4*inch))
             
             # Formatear versículos para PDF
