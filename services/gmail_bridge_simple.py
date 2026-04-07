@@ -35,7 +35,8 @@ class GmailBridgeSimple:
     """
     
     def __init__(self):
-        self.telegram_target = os.getenv('GMAIL_TELEGRAM_TARGET', '-1003796258079')
+        # Always use main user chat for Gmail notifications (same as Hermes Gateway)
+        self.telegram_target = os.getenv('GMAIL_TELEGRAM_TARGET', '882558885')
         self.telegram_thread_id = os.getenv('GMAIL_TELEGRAM_THREAD', '1')
         self.max_messages = int(os.getenv('GMAIL_MAX_MESSAGES', '10'))
         self.poll_interval = 30  # Segundos entre checks
