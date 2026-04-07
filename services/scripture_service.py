@@ -15,6 +15,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
 
 # Configurar logging
 logging.basicConfig(
@@ -106,12 +111,18 @@ class ScriptureService:
         """
         Obtiene el capítulo correspondiente al día del año.
         Si no se especifica día, usa el día actual del año.
+        Ajustado para que Lucas 17 caiga mañana (día 97 del año 2026).
         """
         if day_number is None:
             day_number = datetime.now().timetuple().tm_yday
         
+        # Ajuste para que Lucas 17 (capítulo 61 del NT) caiga el 7 de abril (día 97)
+        # Ajuste = 61 - 97 = -36 días
+        adjustment = -36
+        adjusted_day = day_number + adjustment
+        
         # Ciclar a través del NT si pasamos los 260 capítulos
-        chapter_index = (day_number - 1) % self.total_chapters
+        chapter_index = ((adjusted_day - 1) % self.total_chapters + self.total_chapters) % self.total_chapters
         
         # Encontrar el libro y capítulo correspondiente
         current_chapter = 0
@@ -352,13 +363,31 @@ Tómate unos minutos para meditar en las palabras leídas y aplicarlas a tu vida
             # Generar mensaje para Telegram
             message = self._generate_telegram_message(chapter_info, text)
             
-            # Simular envío (aquí integrarías con hermes o Telegram)
-            logger.info("📧 DAILY SCRIPTURE MESSAGE:")
-            logger.info("="*80)
-            for line in message.split('\n'):
-                logger.info(line)
-            logger.info("="*80)
+            # IMPORTANTE: En cronjobs, el output final se envía automáticamente al target
+            # Obtener santoral del día
+            santoral = self.get_santoral_del_dia()
+            logger.info(f"🕊️ Santoral obtenido: {santoral}")
+            
+            # Generar PDF del capítulo (sin santoral, va en mensaje)
+            pdf_path = self.generate_chapter_pdf(chapter_info, text)
+            if not pdf_path:
+                logger.error("❌ Error generando PDF")
+                return False
+            
+            # Generar mensaje corto para Telegram con santoral
+            message = self._generate_telegram_message(chapter_info, santoral)
+            
+            # IMPORTANTE: En cronjobs, el output final se envía automáticamente al target
+            # Solo necesitamos imprimir el mensaje que queremos enviar
+            print(message)
+            
+            # Enviar PDF por separado via Telegram API
+            pdf_sent = self.send_pdf_to_telegram(pdf_path, chapter_info)
+            
+            # Log del resultado
             logger.info(f"📁 Markdown saved: {markdown_file}")
+            logger.info("📧 Scripture message generated for delivery")
+            logger.info(f"📄 PDF {'enviado' if pdf_sent else 'falló'}: {pdf_path}")
             
             return True
             
@@ -366,24 +395,299 @@ Tómate unos minutos para meditar en las palabras leídas y aplicarlas a tu vida
             logger.error(f"Error sending daily chapter: {e}")
             return False
     
-    def _generate_telegram_message(self, chapter_info: ChapterInfo, text: str) -> str:
-        """Genera el mensaje para Telegram (formato compacto)."""
-        # Truncar texto si es muy largo para Telegram
-        if len(text) > 1000:
-            text = text[:950] + "...\n\n[Capítulo completo en archivo adjunto]"
+    def _generate_telegram_message(self, chapter_info: ChapterInfo, santoral: str = "") -> str:
+        """Genera el mensaje corto para Telegram con santoral del día."""
         
         message = f"""📖 **LECTURA DEL DÍA**
 
 📚 **{chapter_info.book} {chapter_info.chapter}**
 📅 {datetime.now().strftime('%d/%m/%Y')} • Día {chapter_info.day_number}
 
-{text}
+{santoral}
+
+📄 *Generando PDF del capítulo...*
 
 ━━━━━━━━━━━━━━━━━━━━━━
 📊 Progreso: {chapter_info.chapter}/{chapter_info.total_chapters} • Libro {chapter_info.book_number}/27
 🙏 *"Lámpara es a mis pies tu palabra, y lumbrera a mi camino"*"""
         
         return message
+    
+    def _format_verses(self, text: str) -> str:
+        """Formatea el texto destacando números de versículos y subtítulos bíblicos."""
+        import re
+        
+        # Limpiar texto básico
+        formatted = text.strip()
+        
+        # 1. REMOVER TÍTULO DEL CAPÍTULO AL INICIO
+        # Patrón: "NombreLibro Número" al inicio
+        formatted = re.sub(r'^[A-Za-z\s]+\s+\d+\s*', '', formatted)
+        
+        # 2. DETECTAR Y FORMATEAR SUBTÍTULOS  
+        # Los subtítulos aparecen como texto normal seguido inmediatamente por un número de versículo
+        
+        # Primero, limpiar referencias bíblicas que interfieren con la detección
+        formatted = re.sub(r'\([^)]*\)', '', formatted)
+        
+        # Buscar patrones de subtítulos seguidos directamente por versículos
+        # Patrón: texto con letras (sin números) + número inmediato + espacio + letra/símbolo
+        subtitle_pattern = r'([A-ZÁÉÍÓÚÑÜ][a-záéíóúñü\s]+?)(\d{1,2})\s+([A-ZÁÉÍÓÚÑÜ¿¡])'
+        
+        def format_subtitle_and_verse(match):
+            potential_subtitle = match.group(1).strip()
+            verse_num = match.group(2)
+            verse_start = match.group(3)
+            
+            # Filtros para identificar subtítulos reales:
+            # - Longitud mínima de 5 caracteres
+            # - Al menos 2 palabras
+            # - No termina en puntuación de frase completa
+            # - No contiene números internos
+            # - No es una continuación de oración (no tiene minúscula después de punto)
+            if (len(potential_subtitle) >= 5 and 
+                len(potential_subtitle.split()) >= 2 and 
+                not re.search(r'[.!?;:]$', potential_subtitle) and
+                not re.search(r'\d', potential_subtitle) and
+                not re.search(r'\.\s*[a-z]', potential_subtitle)):
+                
+                # Es un subtítulo válido
+                clean_subtitle = re.sub(r'\s+', ' ', potential_subtitle).strip()
+                return f'\n\n**[{clean_subtitle}]**\n\n**{verse_num}** {verse_start}'
+            else:
+                # No es subtítulo, solo formatear versículo
+                return f'{potential_subtitle}\n\n**{verse_num}** {verse_start}'
+        
+        # Aplicar múltiples pasadas para capturar todos los subtítulos
+        prev_formatted = ""
+        attempts = 0
+        while prev_formatted != formatted and attempts < 3:
+            prev_formatted = formatted
+            formatted = re.sub(subtitle_pattern, format_subtitle_and_verse, formatted)
+            attempts += 1
+        
+        # 3. FORMATEAR VERSÍCULOS RESTANTES
+        # Buscar números seguidos de espacio que no estén ya formateados
+        verse_pattern = r'(?<!\*\*)\b(\d{1,2})\s+'
+        
+        def format_verse(match):
+            verse_num = match.group(1)
+            return f'\n\n**{verse_num}** '
+        
+        formatted = re.sub(verse_pattern, format_verse, formatted)
+        
+        # 4. LIMPIAR ESPACIADO FINAL
+        formatted = re.sub(r'\n{3,}', '\n\n', formatted)
+        formatted = re.sub(r'^\n+', '', formatted)  # Remover saltos al inicio
+        formatted = formatted.strip()
+        
+        return formatted
+    
+    def get_santoral_del_dia(self, target_date: Optional[datetime] = None) -> str:
+        """Obtiene el santoral católico del día."""
+        if target_date is None:
+            target_date = datetime.now()
+        
+        # Santoral manual para fechas conocidas (abril)
+        santoral_manual = {
+            "04-06": "San Pedro de Verona, mártir",
+            "04-07": "San Juan Bautista de La Salle", 
+            "04-08": "Santa Julia Billiart",
+            "04-09": "San Casilda",
+            "04-10": "San Ezequiel Moreno",
+            "04-11": "San Estanislao de Cracovia",
+            "04-12": "San José Moscati",
+            "04-13": "San Hermenegildo",
+            "04-14": "Santa Liduvina",
+            "04-15": "Santa Anastasia"
+        }
+        
+        date_key = target_date.strftime("%m-%d")
+        if date_key in santoral_manual:
+            return f"🕊️ **Santoral**: {santoral_manual[date_key]}"
+        
+        # Si no está en el manual, intentar API externa
+        try:
+            url = f"https://api.calendarioeliturgico.org/calendar/{target_date.year}/{target_date.month:02d}/{target_date.day:02d}"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if 'saint' in data and data['saint']:
+                    return f"🕊️ **Santoral**: {data['saint']}"
+                elif 'saints' in data and data['saints']:
+                    saints = ", ".join(data['saints'][:2])  # Máximo 2 santos
+                    return f"🕊️ **Santoral**: {saints}"
+                
+        except Exception as e:
+            logger.warning(f"Error obteniendo santoral: {e}")
+        
+        return "🕊️ **Santoral**: Consultar calendario litúrgico"
+    
+    def generate_chapter_pdf(self, chapter_info: ChapterInfo, text: str) -> str:
+        """Genera un PDF con el capítulo del día con formato bonito."""
+        try:
+            # Crear directorio si no existe
+            pdf_dir = Path.home() / ".hermes" / "scripture" / "daily_readings"
+            pdf_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Nombre del archivo
+            date_str = datetime.now().strftime("%Y%m%d")
+            abbrev = chapter_info.book_abbrev if hasattr(chapter_info, 'book_abbrev') else chapter_info.book[:3]
+            filename = f"{date_str}_{abbrev}_{chapter_info.chapter:02d}.pdf"
+            pdf_path = pdf_dir / filename
+            
+            # Configurar documento PDF con márgenes más pequeños
+            doc = SimpleDocTemplate(str(pdf_path), pagesize=A4,
+                                  rightMargin=36, leftMargin=36,  # Era 72, ahora 36 (mitad)
+                                  topMargin=54, bottomMargin=54)  # Era 72, ahora 54
+            
+            # Estilos con fuentes GIGANTES y Arial
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Title'],
+                fontSize=36,  # Era 32, ahora +4 tamaños más
+                spaceAfter=30,
+                alignment=1,  # Centrado
+                textColor=colors.darkblue,
+                fontName='Helvetica-Bold'  # Arial/Helvetica
+            )
+            
+            subtitle_style = ParagraphStyle(
+                'CustomSubtitle', 
+                parent=styles['Normal'],
+                fontSize=20,  # Era 18, ahora +2 tamaños más
+                spaceAfter=20,
+                alignment=1,  # Centrado
+                textColor=colors.grey,
+                fontName='Helvetica'  # Arial/Helvetica
+            )
+            
+            verse_style = ParagraphStyle(
+                'Verse',
+                parent=styles['Normal'],
+                fontSize=18,  # Era 16, ahora +2 tamaños más (GIGANTE)
+                spaceAfter=16,  # Más espacio entre versículos
+                leftIndent=15,   # Menos indent lateral
+                rightIndent=15,  # Menos indent lateral
+                leading=26,   # Mayor interlineado (era 22)
+                fontName='Helvetica'  # Arial/Helvetica NORMAL (no negrita)
+            )
+            
+
+            
+            # Contenido del PDF
+            story = []
+            
+            # Título
+            story.append(Paragraph(f"<b>{chapter_info.book} {chapter_info.chapter}</b>", title_style))
+            story.append(Paragraph(f"Lectura del día • {datetime.now().strftime('%d de %B de %Y')}", subtitle_style))
+            story.append(Spacer(1, 0.4*inch))
+            
+            # Formatear versículos para PDF
+            formatted_text = self._format_verses_for_pdf(text)
+            
+            # Crear estilo para subtítulos en PDF
+            subtitle_pdf_style = ParagraphStyle(
+                'SubtitlePDF',
+                parent=styles['Normal'], 
+                fontSize=20,  # Tamaño medio entre título y versículo
+                spaceAfter=12,
+                spaceBefore=20,
+                alignment=1,  # Centrado
+                textColor=colors.darkblue,
+                fontName='Helvetica-Bold'
+            )
+            
+            # Procesar el texto formateado línea por línea
+            import re
+            lines = formatted_text.split('\n\n')
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Detectar subtítulos (texto entre corchetes y negritas)
+                subtitle_match = re.match(r'\*\*\[([^\]]+)\]\*\*', line)
+                if subtitle_match:
+                    subtitle_text = subtitle_match.group(1)
+                    story.append(Paragraph(f"<b>{subtitle_text}</b>", subtitle_pdf_style))
+                    continue
+                    
+                # Detectar versículos (número + texto)
+                verse_match = re.match(r'\*\*(\d+)\*\*\s*(.*)', line)
+                if verse_match:
+                    verse_num = verse_match.group(1)
+                    verse_text = verse_match.group(2).strip()
+                    
+                    # Crear párrafo: SOLO número en negrita, texto normal
+                    verse_content = f"<b>{verse_num}</b> {verse_text}"
+                    story.append(Paragraph(verse_content, verse_style))
+            
+            # Pie de página con fuente más grande
+            story.append(Spacer(1, 0.5*inch))
+            story.append(Paragraph("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", subtitle_style))
+            progress = f"<b>Progreso:</b> {chapter_info.chapter}/{chapter_info.total_chapters} • Libro {chapter_info.book_number}/27"
+            story.append(Paragraph(progress, subtitle_style))
+            story.append(Paragraph('<i>"Lámpara es a mis pies tu palabra, y lumbrera a mi camino"</i> - Salmo 119:105', subtitle_style))
+            
+            # Construir PDF
+            doc.build(story)
+            
+            logger.info(f"📄 PDF generado: {pdf_path}")
+            return str(pdf_path)
+            
+        except Exception as e:
+            logger.error(f"Error generando PDF: {e}")
+            return None
+    
+    def _format_verses_for_pdf(self, text: str) -> str:
+        """Formatea versículos específicamente para PDF."""
+        # Usar la función existente como base
+        return self._format_verses(text)
+    
+    def send_pdf_to_telegram(self, pdf_path: str, chapter_info: ChapterInfo) -> bool:
+        """Envía el PDF directamente via Telegram API."""
+        try:
+            # Cargar variables de entorno
+            from pathlib import Path
+            env_file = Path.home() / '.hermes' / '.env'
+            if env_file.exists():
+                for line in env_file.read_text().strip().split('\n'):
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        os.environ[key.strip()] = value.strip()
+            
+            bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+            chat_id = os.getenv('SCRIPTURE_TELEGRAM_TARGET', '882558885')
+            
+            if not bot_token:
+                logger.error("TELEGRAM_BOT_TOKEN no encontrado")
+                return False
+            
+            # Enviar documento PDF
+            url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+            
+            with open(pdf_path, 'rb') as pdf_file:
+                files = {'document': pdf_file}
+                data = {
+                    'chat_id': chat_id,
+                    'caption': f"📄 {chapter_info.book} {chapter_info.chapter} - Lectura completa"
+                }
+                
+                response = requests.post(url, files=files, data=data, timeout=30)
+                
+            if response.status_code == 200:
+                logger.info(f"✅ PDF enviado exitosamente: {pdf_path}")
+                return True
+            else:
+                logger.error(f"❌ Error enviando PDF: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error enviando PDF a Telegram: {e}")
+            return False
 
 
 def main():
