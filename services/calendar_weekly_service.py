@@ -13,6 +13,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, time
 from dataclasses import dataclass
 from typing import List, Optional
+import pytz
 
 # Cargar environment variables desde .env manualmente (para cron/systemd)
 env_file = Path.home() / '.hermes' / '.env'
@@ -134,7 +135,9 @@ class CalendarWeeklyService:
         """Obtiene eventos hasta el final de la próxima semana laboral (viernes)."""
         service = self.get_calendar_service()
         
-        now = datetime.now()
+        # Usar timezone de Madrid
+        madrid_tz = pytz.timezone('Europe/Madrid')
+        now = datetime.now(madrid_tz)
         
         # Mostrar eventos desde hoy hasta el viernes de la semana actual
         # Si ya pasó el viernes, mostrar hasta el viernes de la próxima semana
@@ -154,8 +157,8 @@ class CalendarWeeklyService:
         friday_end = now.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=days_to_friday)
         
         # Buscar eventos desde ahora hasta el viernes (formato RFC3339 para Google API)
-        time_min = now.isoformat() + 'Z' if now.tzinfo is None else now.isoformat()
-        time_max = friday_end.isoformat() + 'Z' if friday_end.tzinfo is None else friday_end.isoformat()
+        time_min = now.isoformat()
+        time_max = friday_end.isoformat()
         
         # Obtener todos los calendarios seleccionados
         selected_calendars = self.get_all_selected_calendars()
@@ -183,27 +186,35 @@ class CalendarWeeklyService:
                     # Determinar si es todo el día
                     is_all_day = 'date' in start
                     
-                    # Parsear fechas (normalizar timezone)
+                    # Parsear fechas (convertir a timezone de Madrid)
                     if is_all_day:
                         start_time = datetime.fromisoformat(start['date'])
+                        # Para eventos de todo el día, asignar timezone de Madrid
+                        start_time = madrid_tz.localize(start_time)
                         end_time = datetime.fromisoformat(end['date']) if end.get('date') else None
+                        if end_time:
+                            end_time = madrid_tz.localize(end_time)
                     else:
                         start_dt_str = start['dateTime']
                         if 'Z' in start_dt_str:
                             start_dt_str = start_dt_str.replace('Z', '+00:00')
                         start_time = datetime.fromisoformat(start_dt_str)
-                        # Convertir a naive datetime (sin timezone) para consistencia
+                        # Convertir a timezone de Madrid
                         if start_time.tzinfo is not None:
-                            start_time = start_time.replace(tzinfo=None)
+                            start_time = start_time.astimezone(madrid_tz)
+                        else:
+                            start_time = madrid_tz.localize(start_time)
                             
                         if end.get('dateTime'):
                             end_dt_str = end['dateTime']
                             if 'Z' in end_dt_str:
                                 end_dt_str = end_dt_str.replace('Z', '+00:00')
                             end_time = datetime.fromisoformat(end_dt_str)
-                            # Convertir a naive datetime
+                            # Convertir a timezone de Madrid
                             if end_time.tzinfo is not None:
-                                end_time = end_time.replace(tzinfo=None)
+                                end_time = end_time.astimezone(madrid_tz)
+                            else:
+                                end_time = madrid_tz.localize(end_time)
                         else:
                             end_time = None
                     
@@ -226,7 +237,8 @@ class CalendarWeeklyService:
     
     def format_events_message(self, events: List[CalendarEvent]) -> str:
         """Formatea los eventos en mensaje de Telegram."""
-        now = datetime.now()
+        madrid_tz = pytz.timezone('Europe/Madrid')
+        now = datetime.now(madrid_tz)
         
         # Determinar período (hasta el viernes de la semana actual)
         current_weekday = now.weekday()
