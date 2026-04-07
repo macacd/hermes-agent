@@ -136,18 +136,19 @@ class CalendarWeeklyService:
         
         now = datetime.now()
         
-        # Mostrar eventos de la próxima semana laboral completa
-        # Desde ahora hasta el viernes de la próxima semana (siempre al menos 7 días)
+        # Mostrar eventos desde hoy hasta el viernes de la semana actual
+        # Si ya pasó el viernes, mostrar hasta el viernes de la próxima semana
         
         current_weekday = now.weekday()  # 0=Monday, 6=Sunday
         
-        # Calcular días hasta el próximo viernes (mínimo 7 días hacia adelante)
-        # Esto asegura que siempre vemos al menos una semana completa
+        # Calcular días hasta el viernes de la semana actual
         if current_weekday <= 4:  # Monday to Friday
-            # Si es lunes-viernes, mostrar hasta el viernes de la próxima semana
-            days_to_friday = 7 + (4 - current_weekday)
+            # Mostrar hasta el viernes de esta semana
+            days_to_friday = 4 - current_weekday
+            if days_to_friday < 0:  # Si ya es viernes y es tarde
+                days_to_friday = 0
         else:  # Saturday or Sunday
-            # Si es fin de semana, mostrar hasta el viernes de la próxima semana
+            # Si es fin de semana, mostrar hasta el viernes de la próxima semana  
             days_to_friday = 7 - current_weekday + 4
         
         friday_end = now.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=days_to_friday)
@@ -227,17 +228,27 @@ class CalendarWeeklyService:
         """Formatea los eventos en mensaje de Telegram."""
         now = datetime.now()
         
-        # Determinar período (hasta el próximo viernes laboral)
+        # Determinar período (hasta el viernes de la semana actual)
         current_weekday = now.weekday()
         if current_weekday <= 4:  # Monday to Friday
-            days_until_friday = 7 + (4 - current_weekday)
+            # Hasta el viernes de esta semana
+            days_until_friday = 4 - current_weekday
+            if days_until_friday < 0:  # Si ya es viernes
+                days_until_friday = 0
         else:  # Saturday or Sunday
+            # Hasta el viernes de la próxima semana
             days_until_friday = 7 - current_weekday + 4
         
         friday_date = now + timedelta(days=days_until_friday)
         
-        # Crear mensaje
-        header = f"""🗓️ **AGENDA PRÓXIMOS DÍAS**
+        # Crear mensaje con texto dinámico
+        current_weekday = now.weekday()
+        if current_weekday <= 4 and days_until_friday <= 3:  # Esta semana laboral
+            agenda_title = "**AGENDA HASTA VIERNES**"
+        else:
+            agenda_title = "**AGENDA PRÓXIMOS DÍAS**"
+            
+        header = f"""🗓️ {agenda_title}
 
 📅 **Del {now.strftime('%d/%m')} al {friday_date.strftime('%d/%m/%Y')}**
 ⏰ **{len(events)} eventos programados**
